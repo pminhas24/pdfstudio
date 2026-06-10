@@ -1,0 +1,17 @@
+dist/
+.superpowers/
+*.local
+node_modules/
+.next/
+out/
+dist/
+build/
+.env
+.env.local
+.env.development.local
+.env.production.local
+.vercel/
+.DS_Store
+Thumbs.db
+.vscode/
+coverage/

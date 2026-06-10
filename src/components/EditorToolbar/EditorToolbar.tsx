@@ -40,7 +40,7 @@ export function EditorToolbar({ onDownload, onUndo, onRedo, onOpenNew, exporting
             P
           </div>
           <span className="text-base font-bold text-slate-900 hidden sm:block">
-            PDF<span className="text-sky-600">Edit</span>
+            PDF&nbsp;<span className="text-sky-600">Studio</span>
           </span>
         </div>
 

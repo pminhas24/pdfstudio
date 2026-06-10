@@ -45,7 +45,7 @@ export function PDFUploader({ onFileLoaded }: Props) {
           P
         </div>
         <span className="text-2xl font-bold text-slate-900">
-          PDF<span className="text-sky-600">Edit</span>
+          PDF&nbsp;<span className="text-sky-600">Studio</span>
         </span>
       </div>
 

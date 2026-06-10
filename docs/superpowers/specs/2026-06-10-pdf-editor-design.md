@@ -1,7 +1,6 @@
 # PDF Editor — Phase 1 Design Spec
 
 **Date:** 2026-06-10
-**Model for implementation:** claude-fable-5
 **Scope:** Phase 1 — Core editing features only
 
 ---

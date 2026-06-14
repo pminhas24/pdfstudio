@@ -27,6 +27,17 @@ export function remapAfterReorder(map: PageJsonMap, order: number[]): PageJsonMa
   return out
 }
 
+export function remapAfterDuplicate(map: PageJsonMap, pageNum: number): PageJsonMap {
+  const out: PageJsonMap = {}
+  for (const [key, json] of Object.entries(map)) {
+    const page = Number(key)
+    if (page <= pageNum) out[page] = json
+    else out[page + 1] = json
+  }
+  if (map[pageNum] !== undefined) out[pageNum + 1] = map[pageNum]
+  return out
+}
+
 // Rotating a page 90° clockwise rotates the rendered view. Each object gets
 // the same rigid transform the page content received: its origin point
 // (left/top) moves to (oldViewHeight − top, left) and the object itself
@@ -38,6 +49,20 @@ export function remapAfterRotate(json: string, oldViewHeight: number): string {
     obj.left = oldViewHeight - top
     obj.top = left
     obj.angle = ((obj.angle ?? 0) + 90) % 360
+  }
+  return JSON.stringify(parsed)
+}
+
+export function remapAfterRotateCounterClockwise(
+  json: string,
+  oldViewWidth: number,
+): string {
+  const parsed = JSON.parse(json) as { objects?: FabricObjectExport[] }
+  for (const obj of parsed.objects ?? []) {
+    const { left, top } = obj
+    obj.left = top
+    obj.top = oldViewWidth - left
+    obj.angle = (((obj.angle ?? 0) - 90) % 360 + 360) % 360
   }
   return JSON.stringify(parsed)
 }

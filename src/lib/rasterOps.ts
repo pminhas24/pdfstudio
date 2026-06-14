@@ -106,17 +106,41 @@ export async function exportPagesAsImages(
   doc: PDFDocumentProxy,
   pageNums: number[],
   baseName: string,
+  format: 'png' | 'jpg' = 'png',
+  quality = 0.9,
   onProgress?: (done: number, total: number) => void,
 ): Promise<void> {
   for (let i = 0; i < pageNums.length; i++) {
     const canvas = await renderToCanvas(doc, pageNums[i], 2)
-    const blob = await canvasToBlob(canvas, 'image/png')
+    const mime = format === 'jpg' ? 'image/jpeg' : 'image/png'
+    const blob = await canvasToBlob(canvas, mime, format === 'jpg' ? quality : undefined)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${baseName.replace(/\.pdf$/i, '')}-page-${pageNums[i]}.png`
+    a.download = `${baseName.replace(/\.pdf$/i, '')}-page-${pageNums[i]}.${format}`
     a.click()
     URL.revokeObjectURL(url)
     onProgress?.(i + 1, pageNums.length)
   }
+}
+
+export async function extractSelectableText(
+  doc: PDFDocumentProxy,
+  pageNums: number[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<string> {
+  const sections: string[] = []
+  for (let i = 0; i < pageNums.length; i++) {
+    const pageNum = pageNums[i]
+    const page = await doc.getPage(pageNum)
+    const content = await page.getTextContent()
+    const text = content.items
+      .map((item) => ('str' in item ? item.str : ''))
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    if (text) sections.push(`Page ${pageNum}\n${text}`)
+    onProgress?.(i + 1, pageNums.length)
+  }
+  return sections.join('\n\n')
 }

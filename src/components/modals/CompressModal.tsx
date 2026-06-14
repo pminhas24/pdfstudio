@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Modal } from './Modal'
-import { compressPdf, type CompressPreset } from '../../lib/rasterOps'
+import { optimizePdf } from '../../lib/pageOperations'
 import { useDocOperation } from '../../hooks/useDocOperation'
 import { usePdfStore } from '../../store/pdfStore'
 
@@ -8,75 +8,69 @@ interface Props {
   onClose: () => void
 }
 
-const PRESET_LABELS: { value: CompressPreset; label: string; hint: string }[] = [
-  { value: 'high', label: 'High quality', hint: 'Smaller file, near-original look' },
-  { value: 'medium', label: 'Balanced', hint: 'Good quality, much smaller' },
-  { value: 'low', label: 'Maximum compression', hint: 'Smallest file, visibly softer' },
-]
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
 
 export function CompressModal({ onClose }: Props) {
-  const [preset, setPreset] = useState<CompressPreset>('medium')
-  const [progress, setProgress] = useState<string | null>(null)
+  const originalBytes = usePdfStore((s) => s.pdfBytes)
   const { applyOp, busy } = useDocOperation()
-  const pdfDocument = usePdfStore((s) => s.pdfDocument)
+  const [result, setResult] = useState<{
+    original: number
+    compressed: number
+    savedPercent: number
+  } | null>(null)
 
   async function handleCompress() {
-    if (!pdfDocument) return
-    if (
-      !window.confirm(
-        'Compression rebuilds every page as an image. Text will no longer be selectable, and existing annotations should be downloaded first. Continue?',
-      )
-    )
-      return
+    if (!originalBytes) return
+    let compressedSize = originalBytes.byteLength
     const ok = await applyOp({
-      transform: (bytes) =>
-        compressPdf(pdfDocument, bytes, preset, (done, total) =>
-          setProgress(`Compressing page ${done} of ${total}…`),
-        ),
-      successMessage: 'PDF compressed',
+      transform: async (bytes) => {
+        const out = await optimizePdf(bytes)
+        compressedSize = out.byteLength
+        return out
+      },
+      successMessage: 'PDF optimized',
     })
-    setProgress(null)
-    if (ok) onClose()
+    if (!ok) return
+    const savedPercent =
+      originalBytes.byteLength > 0
+        ? Math.max(0, (1 - compressedSize / originalBytes.byteLength) * 100)
+        : 0
+    setResult({
+      original: originalBytes.byteLength,
+      compressed: compressedSize,
+      savedPercent,
+    })
   }
 
   return (
     <Modal title="Compress PDF" onClose={onClose}>
       <p className="text-sm text-slate-500 mb-4">
-        Pages are re-rendered as JPEG images — the only compression possible without a
-        server. ⚠️ Text becomes unselectable.
+        Files stay in your browser. This safely rebuilds the PDF and removes document metadata
+        where possible. It does not rasterize pages or fake image compression.
       </p>
-
-      <div className="space-y-2 mb-4">
-        {PRESET_LABELS.map((p) => (
-          <label
-            key={p.value}
-            className={`flex items-start gap-3 border rounded-xl px-4 py-3 cursor-pointer transition-colors ${
-              preset === p.value ? 'border-sky-500 bg-sky-50' : 'border-slate-200 hover:border-sky-300'
-            }`}
-          >
-            <input
-              type="radio"
-              checked={preset === p.value}
-              onChange={() => setPreset(p.value)}
-              className="mt-0.5 accent-sky-600"
-            />
-            <span>
-              <span className="block text-sm font-medium text-slate-800">{p.label}</span>
-              <span className="block text-xs text-slate-500">{p.hint}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-
-      {progress && <p className="text-sm text-sky-600 mb-3">{progress}</p>}
 
       <button
         onClick={handleCompress}
-        disabled={busy}
+        disabled={busy || !originalBytes}
         className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
       >
-        {busy ? 'Compressing…' : 'Compress'}
+        {busy ? 'Optimizing...' : 'Optimize PDF'}
       </button>
+
+      {result && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <div>Original: {formatBytes(result.original)}</div>
+          <div>Optimized: {formatBytes(result.compressed)}</div>
+          <div>Saved: {result.savedPercent.toFixed(1)}%</div>
+          {result.savedPercent < 2 && (
+            <p className="mt-2 text-slate-500">This PDF may already be optimized.</p>
+          )}
+        </div>
+      )}
     </Modal>
   )
 }

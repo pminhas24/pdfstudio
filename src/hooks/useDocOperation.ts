@@ -5,6 +5,7 @@ import { useEditorStore } from '../store/editorStore'
 import { loadPdfDocument } from '../lib/pdfLoader'
 import { disposeAll } from '../lib/fabricManager'
 import { showToast } from '../components/Toast/Toast'
+import type { PdfHistoryEntry } from '../types/pdf'
 
 type PageJsonMap = Record<number, string>
 
@@ -33,6 +34,12 @@ export function useDocOperation() {
       // Remap annotations BEFORE swapping the document so remounting pages
       // pick up the right JSON, and drop stale undo/redo history.
       const currentMap = useAnnotationStore.getState().perPageJson
+      usePdfStore.getState().pushHistory({
+        pdfBytes,
+        pageCount: usePdfStore.getState().pageCount,
+        annotations: currentMap,
+        currentPage: useEditorStore.getState().currentPage,
+      })
       useAnnotationStore.setState({
         perPageJson: op.remapAnnotations ? op.remapAnnotations(currentMap) : currentMap,
         undoStack: {},
@@ -61,4 +68,22 @@ export function useDocOperation() {
   }, [])
 
   return { applyOp, busy }
+}
+
+export async function restorePdfHistory(entry: PdfHistoryEntry): Promise<void> {
+  const { fileName } = usePdfStore.getState()
+  const { doc, pageCount } = await loadPdfDocument(entry.pdfBytes)
+  disposeAll()
+  useAnnotationStore.setState({
+    perPageJson: entry.annotations,
+    undoStack: {},
+    redoStack: {},
+  })
+  const pdfStore = usePdfStore.getState()
+  pdfStore.setPdfBytes(entry.pdfBytes, fileName)
+  pdfStore.setPdfDocument(doc)
+  pdfStore.setPageCount(pageCount)
+  const editor = useEditorStore.getState()
+  editor.setCurrentPage(Math.min(entry.currentPage, pageCount))
+  editor.clearPageSelection()
 }

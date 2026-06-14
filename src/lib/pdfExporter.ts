@@ -110,6 +110,7 @@ async function drawObject(
   obj: FabricObjectExport,
   fontCache: Map<StandardFonts, PDFFont>,
   pageHeight: number, // view-space height (differs from page height when rotated)
+  pageNum: number,
 ): Promise<void> {
   // Fabric rotates an object clockwise about its origin point (left/top).
   // Reproduce that with a graphics-state matrix so every object type —
@@ -134,7 +135,7 @@ async function drawObject(
     )
   }
   try {
-    await drawObjectShape(pdfDoc, page, obj, fontCache, pageHeight)
+    await drawObjectShape(pdfDoc, page, obj, fontCache, pageHeight, pageNum)
   } finally {
     if (angle !== 0) page.pushOperators(popGraphicsState())
   }
@@ -146,6 +147,7 @@ async function drawObjectShape(
   obj: FabricObjectExport,
   fontCache: Map<StandardFonts, PDFFont>,
   pageHeight: number,
+  pageNum: number,
 ): Promise<void> {
   const scaleX = obj.scaleX ?? 1
   const scaleY = obj.scaleY ?? 1
@@ -255,26 +257,53 @@ async function drawObjectShape(
     }
 
     case 'image': {
-      if (!obj.src) break
-      try {
-        const res = await fetch(obj.src)
-        const bytes = await res.arrayBuffer()
-        const isPng = obj.src.startsWith('data:image/png')
-        const embedded = isPng
-          ? await pdfDoc.embedPng(bytes)
-          : await pdfDoc.embedJpg(bytes)
-        page.drawImage(embedded, {
-          x,
-          y: flipY(obj.top, h, pageHeight),
-          width: w,
-          height: h,
-          opacity,
-        })
-      } catch {
-        // Skip images that fail to embed rather than aborting the export.
-      }
+      const embedded = await embedFabricImage(pdfDoc, obj, pageNum)
+      page.drawImage(embedded, {
+        x,
+        y: flipY(obj.top, h, pageHeight),
+        width: w,
+        height: h,
+        opacity,
+      })
       break
     }
+  }
+}
+
+async function embedFabricImage(
+  pdfDoc: PDFDocument,
+  obj: FabricObjectExport,
+  pageNum: number,
+) {
+  if (!obj.src) {
+    throw new Error(`Export failed: an image or signature on page ${pageNum} is missing its source.`)
+  }
+
+  try {
+    const res = await fetch(obj.src)
+    if (!res.ok) throw new Error(`Unable to read image source (${res.status})`)
+    const bytes = await res.arrayBuffer()
+    const contentType = res.headers.get('content-type')?.toLowerCase() ?? ''
+    const src = obj.src.toLowerCase()
+
+    if (src.startsWith('data:image/png') || contentType.includes('image/png')) {
+      return await pdfDoc.embedPng(bytes)
+    }
+    if (
+      src.startsWith('data:image/jpeg') ||
+      src.startsWith('data:image/jpg') ||
+      contentType.includes('image/jpeg') ||
+      contentType.includes('image/jpg')
+    ) {
+      return await pdfDoc.embedJpg(bytes)
+    }
+
+    throw new Error('Unsupported image type')
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : 'Unknown image error'
+    throw new Error(
+      `Export failed: an inserted image or signature on page ${pageNum} could not be embedded. ${detail}`,
+    )
   }
 }
 
@@ -347,7 +376,7 @@ export async function exportPdf(
 
     try {
       for (const obj of fabricJson.objects ?? []) {
-        await drawObject(pdfDoc, page, obj, fontCache, viewHeight)
+        await drawObject(pdfDoc, page, obj, fontCache, viewHeight, pageNum)
       }
     } finally {
       if (rot !== 0) page.pushOperators(popGraphicsState())

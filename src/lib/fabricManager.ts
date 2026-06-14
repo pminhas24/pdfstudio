@@ -1,4 +1,5 @@
-import { Canvas as FabricCanvas } from 'fabric'
+import { ActiveSelection, Canvas as FabricCanvas } from 'fabric'
+import { useEditorStore } from '../store/editorStore'
 
 // One Fabric canvas per PDF page, keyed by page number. Module-level map
 // (not React state) because Fabric instances are imperative objects that
@@ -25,7 +26,7 @@ export function createFabricCanvas(
   const fc = new FabricCanvas(canvasEl, {
     width,
     height,
-    selection: true,
+    selection: false,
     preserveObjectStacking: true,
   })
   // Object coordinates stay in PDF points regardless of display zoom;
@@ -38,9 +39,30 @@ export function createFabricCanvas(
     if (loading.has(pageNum)) return
     onChange(JSON.stringify(fc.toJSON()))
   }
+  const syncSelection = () => {
+    const active = fc.getActiveObject()
+    if (!active) {
+      useEditorStore.getState().setSelectedObjectId(null)
+      return
+    }
+
+    if (active instanceof ActiveSelection) {
+      const first = active.getObjects()[0]
+      fc.discardActiveObject()
+      if (first) fc.setActiveObject(first)
+      useEditorStore.getState().setSelectedObjectId(first ? String(first.get('id') ?? '') : null)
+      fc.requestRenderAll()
+      return
+    }
+
+    useEditorStore.getState().setSelectedObjectId(String(active.get('id') ?? 'selected'))
+  }
   fc.on('object:added', handler)
   fc.on('object:modified', handler)
   fc.on('object:removed', handler)
+  fc.on('selection:created', syncSelection)
+  fc.on('selection:updated', syncSelection)
+  fc.on('selection:cleared', syncSelection)
 
   canvases.set(pageNum, fc)
   return fc
@@ -56,7 +78,9 @@ export async function loadFabricJson(pageNum: number, json: string): Promise<voi
   loading.add(pageNum)
   try {
     await fc.loadFromJSON(JSON.parse(json))
+    fc.discardActiveObject()
     fc.renderAll()
+    useEditorStore.getState().setSelectedObjectId(null)
   } finally {
     loading.delete(pageNum)
   }

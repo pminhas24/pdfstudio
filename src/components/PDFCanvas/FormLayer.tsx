@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useFormStore } from '../../store/formStore'
+import { useEditorStore } from '../../store/editorStore'
 
 interface Props {
   doc: PDFDocumentProxy
@@ -27,6 +28,8 @@ export function FormLayer({ doc, pageNum, scale }: Props) {
   const [fields, setFields] = useState<FieldInfo[]>([])
   const values = useFormStore((s) => s.values)
   const setValue = useFormStore((s) => s.setValue)
+  const interactionMode = useEditorStore((s) => s.interactionMode)
+  const fieldsInteractive = interactionMode === 'form'
 
   useEffect(() => {
     let cancelled = false
@@ -88,7 +91,7 @@ export function FormLayer({ doc, pageNum, scale }: Props) {
 
   return (
     // pointer-events:none on the layer so clicks between fields still reach
-    // the Fabric canvas below; the inputs themselves re-enable events.
+    // the Fabric canvas below; fields re-enable events only in Form Fill Mode.
     <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
       {fields.map((f, i) => {
         const style = {
@@ -108,8 +111,12 @@ export function FormLayer({ doc, pageNum, scale }: Props) {
               type="checkbox"
               style={style}
               checked={current === true}
+              tabIndex={fieldsInteractive ? 0 : -1}
+              aria-disabled={!fieldsInteractive}
               onChange={(e) => setValue(f.name, e.target.checked)}
-              className="pointer-events-auto accent-sky-600"
+              className={`accent-sky-600 ${
+                fieldsInteractive ? 'pointer-events-auto' : 'pointer-events-none opacity-70'
+              }`}
             />
           )
         }
@@ -119,8 +126,12 @@ export function FormLayer({ doc, pageNum, scale }: Props) {
               key={`${f.name}-${i}`}
               style={style}
               value={String(current)}
+              tabIndex={fieldsInteractive ? 0 : -1}
+              aria-disabled={!fieldsInteractive}
               onChange={(e) => setValue(f.name, e.target.value)}
-              className="pointer-events-auto bg-sky-50/80 border border-sky-300 rounded-sm text-slate-900"
+              className={`bg-sky-50/80 border border-sky-300 rounded-sm text-slate-900 ${
+                fieldsInteractive ? 'pointer-events-auto' : 'pointer-events-none opacity-70'
+              }`}
             >
               <option value="" />
               {f.options.map((o) => (
@@ -137,8 +148,12 @@ export function FormLayer({ doc, pageNum, scale }: Props) {
             type="text"
             style={style}
             value={String(current)}
+            tabIndex={fieldsInteractive ? 0 : -1}
+            aria-disabled={!fieldsInteractive}
             onChange={(e) => setValue(f.name, e.target.value)}
-            className="pointer-events-auto bg-sky-50/80 border border-sky-300 rounded-sm px-1 text-slate-900 focus:bg-white focus:outline-sky-500"
+            className={`bg-sky-50/80 border border-sky-300 rounded-sm px-1 text-slate-900 focus:bg-white focus:outline-sky-500 ${
+              fieldsInteractive ? 'pointer-events-auto' : 'pointer-events-none opacity-70'
+            }`}
           />
         )
       })}

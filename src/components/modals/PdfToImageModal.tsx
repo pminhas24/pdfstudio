@@ -2,29 +2,30 @@ import { useState } from 'react'
 import { Modal } from './Modal'
 import { exportPagesAsImages } from '../../lib/rasterOps'
 import { parsePageRanges } from '../../lib/pageRanges'
+import { loadPdfDocument } from '../../lib/pdfLoader'
+import { exportPdf } from '../../lib/pdfExporter'
 import { usePdfStore } from '../../store/pdfStore'
-import { useEditorStore } from '../../store/editorStore'
+import { useAnnotationStore } from '../../store/annotationStore'
+import { useFormStore } from '../../store/formStore'
 import { showToast } from '../Toast/Toast'
 
 interface Props {
+  format: 'jpg' | 'png'
   onClose: () => void
 }
 
-export function ExportImagesModal({ onClose }: Props) {
-  const pdfDocument = usePdfStore((s) => s.pdfDocument)
+export function PdfToImageModal({ format, onClose }: Props) {
   const pageCount = usePdfStore((s) => s.pageCount)
   const fileName = usePdfStore((s) => s.fileName)
-  const currentPage = useEditorStore((s) => s.currentPage)
-  const [scope, setScope] = useState<'current' | 'all' | 'range'>('current')
+  const [scope, setScope] = useState<'all' | 'range'>('all')
   const [rangeInput, setRangeInput] = useState('')
+  const [quality, setQuality] = useState(0.9)
   const [progress, setProgress] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
 
   async function handleExport() {
-    if (!pdfDocument) return
     let pages: number[]
-    if (scope === 'current') pages = [currentPage]
-    else if (scope === 'all') pages = Array.from({ length: pageCount }, (_, i) => i + 1)
+    if (scope === 'all') pages = Array.from({ length: pageCount }, (_, i) => i + 1)
     else {
       try {
         pages = parsePageRanges(rangeInput, pageCount)
@@ -36,13 +37,28 @@ export function ExportImagesModal({ onClose }: Props) {
 
     setWorking(true)
     try {
-      await exportPagesAsImages(pdfDocument, pages, fileName, (done, total) =>
-        setProgress(`Exporting ${done} of ${total}…`),
+      const bytes = usePdfStore.getState().pdfBytes
+      if (!bytes) return
+      const edited = await exportPdf(
+        bytes,
+        useAnnotationStore.getState().perPageJson,
+        useFormStore.getState().values,
       )
-      showToast(`${pages.length} PNG${pages.length > 1 ? 's' : ''} downloaded`, 'success')
+      const editedBuffer = edited.buffer.slice(
+        edited.byteOffset,
+        edited.byteOffset + edited.byteLength,
+      ) as ArrayBuffer
+      const { doc } = await loadPdfDocument(editedBuffer)
+      await exportPagesAsImages(doc, pages, fileName, format, quality, (done, total) =>
+        setProgress(`Exporting ${done} of ${total}...`),
+      )
+      showToast(
+        `${pages.length} ${format.toUpperCase()} image${pages.length > 1 ? 's' : ''} downloaded`,
+        'success',
+      )
       onClose()
     } catch (e) {
-      showToast('Export failed', 'error')
+      showToast(e instanceof Error ? e.message : 'Image export failed', 'error')
     } finally {
       setWorking(false)
       setProgress(null)
@@ -50,22 +66,13 @@ export function ExportImagesModal({ onClose }: Props) {
   }
 
   return (
-    <Modal title="Export Pages as Images" onClose={onClose}>
+    <Modal title={`PDF to ${format.toUpperCase()}`} onClose={onClose}>
       <p className="text-sm text-slate-500 mb-3">
-        Each page downloads as a separate PNG at 2× resolution. Annotations are not
-        included (use Download PDF for that).
+        Files stay in your browser. Multiple pages download one by one because ZIP support is not
+        installed.
       </p>
 
       <div className="space-y-2 mb-4">
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input
-            type="radio"
-            checked={scope === 'current'}
-            onChange={() => setScope('current')}
-            className="accent-sky-600"
-          />
-          Current page ({currentPage})
-        </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="radio"
@@ -82,7 +89,7 @@ export function ExportImagesModal({ onClose }: Props) {
             onChange={() => setScope('range')}
             className="accent-sky-600"
           />
-          Range:
+          Range
           <input
             value={rangeInput}
             onChange={(e) => {
@@ -95,6 +102,23 @@ export function ExportImagesModal({ onClose }: Props) {
         </label>
       </div>
 
+      {format === 'jpg' && (
+        <>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Quality: {Math.round(quality * 100)}%
+          </label>
+          <input
+            type="range"
+            min={0.35}
+            max={1}
+            step={0.05}
+            value={quality}
+            onChange={(e) => setQuality(Number(e.target.value))}
+            className="w-full mb-4 accent-sky-600"
+          />
+        </>
+      )}
+
       {progress && <p className="text-sm text-sky-600 mb-3">{progress}</p>}
 
       <button
@@ -102,7 +126,7 @@ export function ExportImagesModal({ onClose }: Props) {
         disabled={working || (scope === 'range' && !rangeInput.trim())}
         className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
       >
-        {working ? 'Exporting…' : 'Export'}
+        {working ? 'Exporting...' : `Download ${format.toUpperCase()}`}
       </button>
     </Modal>
   )

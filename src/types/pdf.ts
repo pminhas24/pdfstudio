@@ -10,16 +10,25 @@ export type ToolName =
   | 'signature'
 
 export type ShapeName = 'rect' | 'circle' | 'line' | 'arrow'
+export type InteractionMode = 'annotate' | 'form'
 
 export interface EditorState {
+  interactionMode: InteractionMode
   activeTool: ToolName
   activeShape: ShapeName
+  drawColor: string
+  drawWidth: number
+  drawOpacity: number
   zoom: number
   currentPage: number
   selectedObjectId: string | null
   selectedPages: number[]
+  setInteractionMode: (mode: InteractionMode) => void
   setActiveTool: (tool: ToolName) => void
   setActiveShape: (shape: ShapeName) => void
+  setDrawColor: (color: string) => void
+  setDrawWidth: (width: number) => void
+  setDrawOpacity: (opacity: number) => void
   setZoom: (zoom: number) => void
   setCurrentPage: (page: number) => void
   setSelectedObjectId: (id: string | null) => void
@@ -32,10 +41,22 @@ export interface PDFState {
   fileName: string
   pageCount: number
   pdfDocument: PDFDocumentProxy | null
+  undoStack: PdfHistoryEntry[]
+  redoStack: PdfHistoryEntry[]
   setPdfBytes: (bytes: ArrayBuffer, name: string) => void
   setPageCount: (count: number) => void
   setPdfDocument: (doc: PDFDocumentProxy) => void
+  pushHistory: (entry: PdfHistoryEntry) => void
+  popUndo: (current: PdfHistoryEntry) => PdfHistoryEntry | undefined
+  popRedo: (current: PdfHistoryEntry) => PdfHistoryEntry | undefined
   reset: () => void
+}
+
+export interface PdfHistoryEntry {
+  pdfBytes: ArrayBuffer
+  pageCount: number
+  annotations: Record<number, string>
+  currentPage: number
 }
 
 export interface AnnotationState {

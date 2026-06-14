@@ -12,6 +12,25 @@ async function makeBlankPdf(pages = 2): Promise<ArrayBuffer> {
   ) as ArrayBuffer
 }
 
+const TINY_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+
+function imageObject(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'Image',
+    left: 50,
+    top: 80,
+    width: 100,
+    height: 80,
+    scaleX: 1,
+    scaleY: 1,
+    angle: 0,
+    opacity: 1,
+    src: TINY_PNG_DATA_URL,
+    ...overrides,
+  }
+}
+
 describe('exportPdf integration', () => {
   it('burns text, rect, line, and path annotations into the PDF', async () => {
     const original = await makeBlankPdf(2)
@@ -169,5 +188,95 @@ describe('exportPdf integration', () => {
       ],
     })
     await expect(exportPdf(original, { 1: json })).resolves.toBeDefined()
+  })
+
+  it('exports inserted images', async () => {
+    const original = await makeBlankPdf(1)
+    const json = JSON.stringify({
+      version: '6.0.0',
+      objects: [imageObject()],
+    })
+
+    const result = await exportPdf(original, { 1: json })
+    const reloaded = await PDFDocument.load(result)
+    expect(reloaded.getPageCount()).toBe(1)
+    expect(result.length).toBeGreaterThan(original.byteLength)
+  })
+
+  it('exports uploaded signatures stored as image objects', async () => {
+    const original = await makeBlankPdf(1)
+    const json = JSON.stringify({
+      version: '6.0.0',
+      objects: [
+        imageObject({
+          left: 60,
+          top: 650,
+          width: 180,
+          height: 60,
+        }),
+      ],
+    })
+
+    const result = await exportPdf(original, { 1: json })
+    const reloaded = await PDFDocument.load(result)
+    expect(reloaded.getPageCount()).toBe(1)
+    expect(result.length).toBeGreaterThan(original.byteLength)
+  })
+
+  it('exports duplicate images without deduplicating content away', async () => {
+    const original = await makeBlankPdf(1)
+    const json = JSON.stringify({
+      version: '6.0.0',
+      objects: [
+        imageObject({ left: 50, top: 80 }),
+        imageObject({ left: 220, top: 80 }),
+      ],
+    })
+
+    const result = await exportPdf(original, { 1: json })
+    const reloaded = await PDFDocument.load(result)
+    expect(reloaded.getPageCount()).toBe(1)
+    expect(result.length).toBeGreaterThan(original.byteLength)
+  })
+
+  it('exports large inserted images', async () => {
+    const original = await makeBlankPdf(1)
+    const json = JSON.stringify({
+      version: '6.0.0',
+      objects: [
+        imageObject({
+          left: 0,
+          top: 0,
+          width: 2400,
+          height: 1800,
+          scaleX: 0.25,
+          scaleY: 0.25,
+        }),
+      ],
+    })
+
+    const result = await exportPdf(original, { 1: json })
+    const reloaded = await PDFDocument.load(result)
+    expect(reloaded.getPageCount()).toBe(1)
+    expect(result.length).toBeGreaterThan(original.byteLength)
+  })
+
+  it('aborts export when any image fails to embed', async () => {
+    const original = await makeBlankPdf(1)
+    const json = JSON.stringify({
+      version: '6.0.0',
+      objects: [
+        imageObject({ left: 50, top: 80 }),
+        imageObject({
+          left: 220,
+          top: 80,
+          src: 'data:image/png;base64,this-is-not-valid-image-data',
+        }),
+      ],
+    })
+
+    await expect(exportPdf(original, { 1: json })).rejects.toThrow(
+      /inserted image or signature on page 1 could not be embedded/i,
+    )
   })
 })

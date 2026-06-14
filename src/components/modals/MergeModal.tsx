@@ -19,6 +19,7 @@ export function MergeModal({ onClose }: Props) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': ['.pdf'] },
+    multiple: true,
     onDrop: (accepted) => {
       accepted.forEach((file) => {
         const reader = new FileReader()
@@ -29,10 +30,20 @@ export function MergeModal({ onClose }: Props) {
     },
   })
 
+  function moveFile(index: number, direction: -1 | 1) {
+    setFiles((current) => {
+      const target = index + direction
+      if (target < 0 || target >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
   async function handleMerge() {
     const ok = await applyOp({
       transform: (bytes) => mergePdfs(bytes, files.map((f) => f.bytes)),
-      successMessage: `Merged ${files.length} file${files.length > 1 ? 's' : ''} into the document`,
+      successMessage: `Merged ${files.length} file${files.length > 1 ? 's' : ''}`,
     })
     if (ok) onClose()
   }
@@ -40,7 +51,7 @@ export function MergeModal({ onClose }: Props) {
   return (
     <Modal title="Merge PDFs" onClose={onClose}>
       <p className="text-sm text-slate-500 mb-3">
-        Added files are appended to the end of the current document, in order.
+        Selected PDFs are appended after the current document in the order shown.
       </p>
 
       <div
@@ -58,15 +69,31 @@ export function MergeModal({ onClose }: Props) {
           {files.map((f, i) => (
             <li
               key={`${f.name}-${i}`}
-              className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2"
+              className="flex items-center justify-between gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2"
             >
-              <span className="truncate text-slate-700">📄 {f.name}</span>
-              <button
-                onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))}
-                className="text-slate-400 hover:text-red-600 ml-2"
-              >
-                ✕
-              </button>
+              <span className="truncate text-slate-700">{f.name}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => moveFile(i, -1)}
+                  disabled={i === 0}
+                  className="px-1.5 py-0.5 text-xs border border-slate-200 rounded disabled:opacity-40"
+                >
+                  Up
+                </button>
+                <button
+                  onClick={() => moveFile(i, 1)}
+                  disabled={i === files.length - 1}
+                  className="px-1.5 py-0.5 text-xs border border-slate-200 rounded disabled:opacity-40"
+                >
+                  Dn
+                </button>
+                <button
+                  onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))}
+                  className="px-1.5 py-0.5 text-xs border border-slate-200 rounded text-slate-500 hover:text-red-600"
+                >
+                  x
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -77,7 +104,7 @@ export function MergeModal({ onClose }: Props) {
         disabled={files.length === 0 || busy}
         className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
       >
-        {busy ? 'Merging…' : `Merge ${files.length || ''} file${files.length === 1 ? '' : 's'}`}
+        {busy ? 'Merging...' : `Merge ${files.length || ''} file${files.length === 1 ? '' : 's'}`}
       </button>
     </Modal>
   )

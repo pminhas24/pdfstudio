@@ -36,9 +36,9 @@ describe('EditorToolbar', () => {
 
   it('shows shape picker only when shape tool active', async () => {
     render(<EditorToolbar onDownload={vi.fn()} onUndo={vi.fn()} onRedo={vi.fn()} />)
-    expect(screen.queryByText('→ Arrow')).not.toBeInTheDocument()
+    expect(screen.queryByText('Arrow')).not.toBeInTheDocument()
     await userEvent.click(screen.getByText('Shape'))
-    expect(screen.getByText('→ Arrow')).toBeInTheDocument()
+    expect(screen.getByText('Arrow')).toBeInTheDocument()
   })
 
   it('calls onDownload when Download clicked', async () => {

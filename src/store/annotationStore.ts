@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { AnnotationState } from '../types/pdf'
 
 const MAX_UNDO = 50
+const EMPTY_FABRIC_JSON = '{"version":"6.0.0","objects":[]}'
 
 export const useAnnotationStore = create<AnnotationState>((set, get) => ({
   perPageJson: {},
@@ -11,8 +12,9 @@ export const useAnnotationStore = create<AnnotationState>((set, get) => ({
   savePageJson: (page: number, json: string) => {
     const { perPageJson, undoStack } = get()
     const previous = perPageJson[page]
+    if (previous === json) return
     const stack = undoStack[page] ?? []
-    const newStack = previous ? [...stack, previous].slice(-MAX_UNDO) : stack
+    const newStack = [...stack, previous ?? EMPTY_FABRIC_JSON].slice(-MAX_UNDO)
     set({
       perPageJson: { ...perPageJson, [page]: json },
       undoStack: { ...undoStack, [page]: newStack },

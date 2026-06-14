@@ -11,7 +11,7 @@ describe('PDFUploader', () => {
 
   it('shows the privacy message', () => {
     render(<PDFUploader onFileLoaded={vi.fn()} />)
-    expect(screen.getByText(/stays in your browser/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/files stay in your browser/i)[0]).toBeInTheDocument()
   })
 
   it('calls onFileLoaded with ArrayBuffer when a PDF file is selected', async () => {

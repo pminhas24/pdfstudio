@@ -18,12 +18,14 @@ interface DashboardTool {
   status: ToolStatus
   action: ToolAction
   workflowModal?: ToolModalName
+  resultAction?: WorkflowIntent['resultAction']
   limitation?: string
 }
 
 export interface WorkflowIntent {
   label: string
   modal: ToolModalName | null
+  resultAction?: 'removeMetadata'
 }
 
 const TOOL_GROUPS: { title: string; tools: DashboardTool[] }[] = [
@@ -118,7 +120,7 @@ const TOOL_GROUPS: { title: string; tools: DashboardTool[] }[] = [
         description: 'Open a PDF, then clear common document metadata fields.',
         status: 'working',
         action: 'upload-pdf',
-        workflowModal: 'securityPrivacy',
+        resultAction: 'removeMetadata',
       },
       {
         title: 'Password protect',
@@ -276,6 +278,7 @@ export function PDFUploader({ onFileLoaded, onWorkflowSelected }: Props) {
                         const intent = {
                           label: tool.title,
                           modal: tool.workflowModal ?? null,
+                          resultAction: tool.resultAction,
                         }
                         setActiveWorkflow(intent)
                         onWorkflowSelected?.(intent)

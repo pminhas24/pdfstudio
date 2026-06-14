@@ -11,10 +11,34 @@ import { useEditorStore } from './store/editorStore'
 import { useFormStore } from './store/formStore'
 import { loadPdfDocument } from './lib/pdfLoader'
 import { exportPdf, downloadBytes } from './lib/pdfExporter'
+import { removePdfMetadata } from './lib/pageOperations'
 import { getFabricCanvas, loadFabricJson, disposeAll } from './lib/fabricManager'
 import { restorePdfHistory } from './hooks/useDocOperation'
 import type { ToolModalName } from './components/ToolsMenu/ToolsMenu'
 import type { WorkflowIntent } from './components/PDFUploader/PDFUploader'
+
+interface MetadataResult {
+  fileName: string
+  originalSize: number
+  cleanedSize: number
+  cleanedBytes: ArrayBuffer
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
+
+function downloadCleanedPdf(bytes: ArrayBuffer, fileName: string): void {
+  const blob = new Blob([bytes], { type: 'application/pdf' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName.replace(/\.pdf$/i, '') + '-cleaned.pdf'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export default function App() {
   const {
@@ -35,6 +59,7 @@ export default function App() {
   const [workflow, setWorkflow] = useState<WorkflowIntent | null>(null)
   const workflowRef = useRef<WorkflowIntent | null>(null)
   const [requestedModal, setRequestedModal] = useState<ToolModalName | null>(null)
+  const [metadataResult, setMetadataResult] = useState<MetadataResult | null>(null)
 
   const handleWorkflowSelected = useCallback((nextWorkflow: WorkflowIntent | null) => {
     workflowRef.current = nextWorkflow
@@ -45,17 +70,34 @@ export default function App() {
     async (bytes: ArrayBuffer, name: string) => {
       setLoading(true)
       try {
+        const selectedWorkflow = workflowRef.current
+        if (selectedWorkflow?.resultAction === 'removeMetadata') {
+          const cleanedBytes = await removePdfMetadata(bytes)
+          reset()
+          disposeAll()
+          useAnnotationStore.setState({ perPageJson: {}, undoStack: {}, redoStack: {} })
+          useFormStore.getState().reset()
+          setRequestedModal(null)
+          setMetadataResult({
+            fileName: name,
+            originalSize: bytes.byteLength,
+            cleanedSize: cleanedBytes.byteLength,
+            cleanedBytes,
+          })
+          return
+        }
+
         setPdfBytes(bytes, name)
         const { doc, pageCount } = await loadPdfDocument(bytes)
         setPdfDocument(doc)
         setPageCount(pageCount)
         useEditorStore.getState().setCurrentPage(1)
-        const selectedWorkflow = workflowRef.current
         if (selectedWorkflow?.modal) setRequestedModal(selectedWorkflow.modal)
       } catch (e) {
         console.error(e)
         reset()
         setRequestedModal(null)
+        setMetadataResult(null)
         handleWorkflowSelected(null)
         showToast(
           'Could not open this PDF. It may be corrupted, encrypted, or unsupported.',
@@ -141,6 +183,33 @@ export default function App() {
     useEditorStore.getState().setZoom(1)
     handleWorkflowSelected(null)
     setRequestedModal(null)
+    setMetadataResult(null)
+  }
+
+  async function handleOpenMetadataResultInEditor() {
+    if (!metadataResult) return
+    setLoading(true)
+    try {
+      const { cleanedBytes, fileName } = metadataResult
+      const { doc, pageCount } = await loadPdfDocument(cleanedBytes)
+      disposeAll()
+      useAnnotationStore.setState({ perPageJson: {}, undoStack: {}, redoStack: {} })
+      useFormStore.getState().reset()
+      const pdfStore = usePdfStore.getState()
+      pdfStore.setPdfBytes(cleanedBytes, fileName)
+      pdfStore.setPdfDocument(doc)
+      pdfStore.setPageCount(pageCount)
+      useEditorStore.getState().setCurrentPage(1)
+      useEditorStore.getState().setActiveTool('select')
+      useEditorStore.getState().setInteractionMode('annotate')
+      setMetadataResult(null)
+      handleWorkflowSelected(null)
+    } catch (e) {
+      console.error(e)
+      showToast('Could not open the cleaned PDF in the editor.', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -179,6 +248,22 @@ export default function App() {
   }
 
   if (!pdfDocument) {
+    if (metadataResult) {
+      return (
+        <>
+          <MetadataResultScreen
+            result={metadataResult}
+            onDownload={() =>
+              downloadCleanedPdf(metadataResult.cleanedBytes, metadataResult.fileName)
+            }
+            onOpenEditor={handleOpenMetadataResultInEditor}
+            onStartOver={handleOpenNew}
+          />
+          <ToastContainer />
+        </>
+      )
+    }
+
     return (
       <>
         <PDFUploader
@@ -233,6 +318,94 @@ export default function App() {
         </div>
       </div>
       <ToastContainer />
+    </div>
+  )
+}
+
+function MetadataResultScreen({
+  result,
+  onDownload,
+  onOpenEditor,
+  onStartOver,
+}: {
+  result: MetadataResult
+  onDownload: () => void
+  onOpenEditor: () => void
+  onStartOver: () => void
+}) {
+  const removed = ['title', 'author', 'subject', 'keywords', 'creator', 'producer']
+
+  return (
+    <div className="min-h-screen bg-slate-100 px-4 py-8 text-slate-900">
+      <div className="mx-auto max-w-2xl rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+        <div className="mb-5">
+          <p className="text-xs font-bold uppercase tracking-wide text-green-700">
+            Files stay in your browser
+          </p>
+          <h1 className="mt-1 text-2xl font-bold">Metadata removed</h1>
+        </div>
+
+        <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-semibold text-slate-800">{result.fileName}</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Original file size
+              </p>
+              <p className="text-lg font-bold">{formatBytes(result.originalSize)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                New file size
+              </p>
+              <p className="text-lg font-bold">{formatBytes(result.cleanedSize)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-5">
+          <h2 className="text-sm font-bold text-slate-800">What was removed where possible</h2>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {removed.map((item) => (
+              <div
+                key={item}
+                className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-semibold capitalize text-green-800"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">
+          This removes common PDF metadata. It may not remove hidden content, annotations,
+          attachments, or XMP metadata.
+        </p>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={onDownload}
+            className="rounded-lg bg-sky-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-sky-700"
+          >
+            Download cleaned PDF
+          </button>
+          <button
+            type="button"
+            onClick={onOpenEditor}
+            className="rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Open in editor
+          </button>
+          <button
+            type="button"
+            onClick={onStartOver}
+            className="rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Start over / Choose another file
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

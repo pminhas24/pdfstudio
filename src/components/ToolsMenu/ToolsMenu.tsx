@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { MergeModal } from '../modals/MergeModal'
 import { SplitExtractModal } from '../modals/SplitExtractModal'
 import { PageNumbersModal } from '../modals/PageNumbersModal'
@@ -67,7 +68,9 @@ const MENU_GROUPS: { title: string; items: { modal: Exclude<ModalName, null>; la
 export function ToolsMenu({ requestedModal, onRequestedModalOpened }: Props) {
   const [open, setOpen] = useState(false)
   const [activeModal, setActiveModal] = useState<ModalName>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, maxHeight: 320 })
 
   useEffect(() => {
     if (!requestedModal) return
@@ -77,16 +80,52 @@ export function ToolsMenu({ requestedModal, onRequestedModalOpened }: Props) {
   }, [requestedModal, onRequestedModalOpened])
 
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    if (!open) return
+
+    function updatePosition() {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const menuWidth = 256
+      const margin = 8
+      const left = Math.min(
+        Math.max(margin, rect.left),
+        Math.max(margin, window.innerWidth - menuWidth - margin),
+      )
+      const top = rect.bottom + margin
+      setMenuPosition({
+        top,
+        left,
+        maxHeight: Math.max(180, window.innerHeight - top - margin),
+      })
     }
-    if (open) document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
+
+    function onPointerDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+
+    updatePosition()
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
   }, [open])
 
   return (
-    <div className="relative" ref={menuRef}>
+    <>
       <button
+        ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0 ${
           open ? 'bg-sky-100 text-sky-700' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'
@@ -95,29 +134,39 @@ export function ToolsMenu({ requestedModal, onRequestedModalOpened }: Props) {
         Tools <span className="text-xs">v</span>
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-1 max-h-[75vh] w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-2 shadow-xl z-40">
-          {MENU_GROUPS.map((group) => (
-            <div key={group.title}>
-              <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                {group.title}
-              </p>
-              {group.items.map((item) => (
-                <button
-                  key={item.modal}
-                  onClick={() => {
-                    setActiveModal(item.modal)
-                    setOpen(false)
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-sky-50 hover:text-sky-700"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[1000] w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-2 shadow-2xl"
+            style={{
+              top: menuPosition.top,
+              left: menuPosition.left,
+              maxHeight: menuPosition.maxHeight,
+            }}
+          >
+            {MENU_GROUPS.map((group) => (
+              <div key={group.title}>
+                <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {group.title}
+                </p>
+                {group.items.map((item) => (
+                  <button
+                    key={item.modal}
+                    onClick={() => {
+                      setActiveModal(item.modal)
+                      setOpen(false)
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-sky-50 hover:text-sky-700"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
 
       {activeModal === 'merge' && <MergeModal onClose={() => setActiveModal(null)} />}
       {activeModal === 'split' && (
@@ -171,6 +220,6 @@ export function ToolsMenu({ requestedModal, onRequestedModalOpened }: Props) {
       {activeModal === 'securityPrivacy' && (
         <SecurityPrivacyModal onClose={() => setActiveModal(null)} />
       )}
-    </div>
+    </>
   )
 }

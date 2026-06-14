@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { renderPageThumbnail } from '../../lib/pdfLoader'
 import { useEditorStore } from '../../store/editorStore'
@@ -58,6 +59,10 @@ function Thumbnail({
   const setCurrentPage = useEditorStore((s) => s.setCurrentPage)
   const togglePageSelection = useEditorStore((s) => s.togglePageSelection)
   const [dragOver, setDragOver] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const actionButtonRef = useRef<HTMLButtonElement>(null)
+  const actionMenuRef = useRef<HTMLDivElement>(null)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
 
   useEffect(() => {
     if (canvasRef.current) renderPageThumbnail(doc, pageNum, canvasRef.current)
@@ -68,6 +73,53 @@ function Thumbnail({
     window.dispatchEvent(
       new CustomEvent('pdfstudio:scroll-to-page', { detail: { pageNum } }),
     )
+  }
+
+  useEffect(() => {
+    if (!actionsOpen) return
+
+    function updatePosition() {
+      const rect = actionButtonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const menuWidth = 224
+      const margin = 8
+      setMenuPosition({
+        top: Math.min(rect.bottom + margin, window.innerHeight - margin),
+        left: Math.min(
+          Math.max(margin, rect.right - menuWidth),
+          Math.max(margin, window.innerWidth - menuWidth - margin),
+        ),
+      })
+    }
+
+    function onPointerDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (actionButtonRef.current?.contains(target) || actionMenuRef.current?.contains(target)) {
+        return
+      }
+      setActionsOpen(false)
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setActionsOpen(false)
+    }
+
+    updatePosition()
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [actionsOpen])
+
+  function runAction(action: () => void) {
+    setActionsOpen(false)
+    action()
   }
 
   return (
@@ -98,95 +150,115 @@ function Thumbnail({
         checked={isSelected}
         onChange={() => togglePageSelection(pageNum)}
         onClick={(e) => e.stopPropagation()}
-        className={`absolute top-1.5 left-1.5 accent-sky-600 ${
-          isSelected ? '' : 'opacity-0 group-hover:opacity-100'
-        } transition-opacity`}
+        className="absolute top-1.5 left-1.5 accent-sky-600"
         title="Select page"
       />
 
-      <div className="absolute top-1.5 right-1.5 grid grid-cols-2 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="mt-1 flex items-center justify-between gap-1">
+        <p
+          className={`text-xs font-semibold ${
+            isActive ? 'text-sky-700' : 'text-slate-500'
+          }`}
+        >
+          Page {pageNum}
+        </p>
         <button
+          ref={actionButtonRef}
+          type="button"
           disabled={busy}
           onClick={(e) => {
             e.stopPropagation()
-            onRotateCounterClockwise(pageNum)
+            setActionsOpen((value) => !value)
           }}
-          className="w-6 h-6 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 hover:text-sky-600 hover:border-sky-300 shadow-sm"
-          title="Rotate counterclockwise"
+          className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          aria-label={`Page ${pageNum} actions`}
         >
-          CCW
+          ...
         </button>
-        <button
-          disabled={busy}
-          onClick={(e) => {
-            e.stopPropagation()
-            onRotateClockwise(pageNum)
-          }}
-          className="w-6 h-6 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 hover:text-sky-600 hover:border-sky-300 shadow-sm"
-          title="Rotate clockwise"
-        >
-          CW
-        </button>
-        {pageNum > 1 && (
-          <button
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onMoveUp(pageNum)
-            }}
-            className="w-6 h-6 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 hover:text-sky-600 hover:border-sky-300 shadow-sm"
-            title="Move page up"
-          >
-            Up
-          </button>
-        )}
-        {pageNum < pageCount && (
-          <button
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onMoveDown(pageNum)
-            }}
-            className="w-6 h-6 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 hover:text-sky-600 hover:border-sky-300 shadow-sm"
-            title="Move page down"
-          >
-            Dn
-          </button>
-        )}
-        <button
-          disabled={busy}
-          onClick={(e) => {
-            e.stopPropagation()
-            onDuplicate(pageNum)
-          }}
-          className="w-6 h-6 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 hover:text-sky-600 hover:border-sky-300 shadow-sm"
-          title="Duplicate page"
-        >
-          +
-        </button>
-        {pageCount > 1 && (
-          <button
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(pageNum)
-            }}
-            className="w-6 h-6 bg-white/95 border border-slate-200 rounded-md text-xs text-slate-600 hover:text-red-600 hover:border-red-300 shadow-sm"
-            title="Delete page"
-          >
-            x
-          </button>
-        )}
       </div>
 
-      <p
-        className={`text-xs text-center mt-1 font-semibold ${
-          isActive ? 'text-sky-700' : 'text-slate-400'
-        }`}
-      >
-        {pageNum}
-      </p>
+      {actionsOpen &&
+        createPortal(
+          <div
+            ref={actionMenuRef}
+            className="fixed z-[1000] w-56 rounded-lg border border-slate-200 bg-white py-1.5 shadow-2xl"
+            style={{ top: menuPosition.top, left: menuPosition.left }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <PageAction
+              icon="R"
+              label="Rotate clockwise"
+              disabled={busy}
+              onClick={() => runAction(() => onRotateClockwise(pageNum))}
+            />
+            <PageAction
+              icon="L"
+              label="Rotate counterclockwise"
+              disabled={busy}
+              onClick={() => runAction(() => onRotateCounterClockwise(pageNum))}
+            />
+            <PageAction
+              icon="+"
+              label="Duplicate page"
+              disabled={busy}
+              onClick={() => runAction(() => onDuplicate(pageNum))}
+            />
+            <PageAction
+              icon="Up"
+              label="Move page up"
+              disabled={busy || pageNum === 1}
+              onClick={() => runAction(() => onMoveUp(pageNum))}
+            />
+            <PageAction
+              icon="Dn"
+              label="Move page down"
+              disabled={busy || pageNum === pageCount}
+              onClick={() => runAction(() => onMoveDown(pageNum))}
+            />
+            <div className="my-1 h-px bg-slate-100" />
+            <PageAction
+              icon="Del"
+              label="Delete page"
+              danger
+              disabled={busy || pageCount <= 1}
+              onClick={() => runAction(() => onDelete(pageNum))}
+            />
+          </div>,
+          document.body,
+        )}
     </div>
+  )
+}
+
+function PageAction({
+  icon,
+  label,
+  disabled,
+  danger,
+  onClick,
+}: {
+  icon: string
+  label: string
+  disabled?: boolean
+  danger?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
+        danger
+          ? 'text-red-600 hover:bg-red-50'
+          : 'text-slate-700 hover:bg-sky-50 hover:text-sky-700'
+      }`}
+    >
+      <span className="w-7 shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-slate-500">
+        {icon}
+      </span>
+      {label}
+    </button>
   )
 }
 

@@ -127,7 +127,7 @@ export function ToolsMenu({ requestedModal, onRequestedModalOpened }: Props) {
       <button
         ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0 ${
+        className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
           open ? 'bg-sky-100 text-sky-700' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'
         }`}
       >

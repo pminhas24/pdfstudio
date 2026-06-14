@@ -193,7 +193,7 @@ export default function App() {
   const activeFabricCanvas = getFabricCanvas(currentPage) ?? null
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-100">
+    <div className="flex h-screen flex-col bg-slate-100">
       <EditorToolbar
         onDownload={handleDownload}
         onUndo={handleUndo}
@@ -206,7 +206,7 @@ export default function App() {
         requestedModal={requestedModal}
         onRequestedModalOpened={() => setRequestedModal(null)}
       />
-      <div className="relative flex flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className={`${showThumbs ? 'flex' : 'hidden'} md:flex`}>
           <PageThumbnailSidebar doc={pdfDocument} pageCount={pageCount} />
         </div>

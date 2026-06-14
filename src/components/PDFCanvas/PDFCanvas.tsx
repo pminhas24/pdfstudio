@@ -159,7 +159,7 @@ export function PDFCanvas({ doc, pageCount }: Props) {
   return (
     <div
       ref={containerRef}
-      className="flex flex-1 flex-col items-center overflow-auto bg-slate-200 px-3 py-6 sm:px-6 lg:p-8"
+      className="flex flex-1 flex-col items-center overflow-auto bg-slate-200 px-3 pb-8 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pb-8 lg:pt-12"
     >
       <div className="relative w-full" style={{ height: layout.totalHeight }}>
         {visiblePages.map((pageNum) => {
